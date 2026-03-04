@@ -1,0 +1,178 @@
+---
+title: "CH4 initial"
+author: 
+Zhang Zhenglin
+output:
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: sentence
+---
+
+# Necessary libraries
+
+```{r message=FALSE,warning=FALSE}
+library(knitr)
+library(ggplot2)
+theme_set(theme_bw())
+library(emmeans)
+library(multcomp)
+library(PLS205)
+library(lme4)
+library(lmerTest)
+library(multcompView)
+library(car)
+library(Rmisc) 
+library(dplyr) #https://r4ds.had.co.nz/ (Chapter 3, Chapter 5, look at filter and select)
+# https://bookdown.org/ansellbr/WEHI_tidyR_course_book/
+library(stringr) 
+library(data.table)
+library(GGally)
+library(formatR)
+library(readxl)
+library(FluxCalR)
+library(tidyverse)
+library(fuzzyjoin)
+library(purrr)
+library(data.table)
+library(broom)
+library(lubridate)
+library(readxl)
+library(openxlsx)
+library(ggrepel)
+library(gridExtra)
+library(zoo)
+```
+
+# Load data
+
+```{r}
+master <- read_excel("../Data/Initial_Database.xlsx", sheet = 1)
+str(master)
+```
+
+# Make sure all columns are in the correct variable class
+
+```{r}
+master$Number <- as.factor(master$Number)
+```
+
+
+# Convert all observations to common currency
+
+# Linear interpolation function
+
+Number column here is our biological replicate. One set of time resolved flux data for one cumulative flux value. 
+
+
+```{r}
+library(dplyr)
+
+interpolate_emissions <- function(data,
+                                  group_cols = c("Number", "Year", "Location", "Variety"),
+                                  day_col = "Days_After_Flooding",
+                                  emission_col = "Emission_g_CH4_ha_day") {
+
+  data %>%
+    arrange(across(all_of(c(group_cols, day_col)))) %>%
+    group_by(across(all_of(group_cols))) %>%
+    group_modify(~ {
+
+      df_group <- .x
+
+      # Remove NA emission rows for interpolation check
+      valid_rows <- df_group %>%
+        filter(!is.na(.data[[emission_col]]))
+
+      # If fewer than 2 valid points → cannot interpolate
+      if (nrow(valid_rows) < 2) {
+        return(df_group)
+      }
+
+      # Full daily sequence
+      full_days <- seq(min(valid_rows[[day_col]]),
+                       max(valid_rows[[day_col]]),
+                       by = 1)
+
+      # Linear interpolation
+      interp_vals <- approx(
+        x = valid_rows[[day_col]],
+        y = valid_rows[[emission_col]],
+        xout = full_days,
+        method = "linear"
+      )
+
+      # Create template from first row
+      template <- df_group[1, ]
+      template <- template[rep(1, length(full_days)), ]
+
+      template[[day_col]] <- interp_vals$x
+      template[[emission_col]] <- interp_vals$y
+
+      template
+    }) %>%
+    ungroup()
+}
+```
+
+# Linear interpolation
+
+```{r}
+flux_interpolated <- interpolate_emissions(master)
+```
+
+
+
+# Interpolation visualisation
+
+```{r}
+ggplot(flux_interpolated, aes(y=Emission_g_CH4_ha_day, x=Days_After_Flooding, color = Number)) + geom_point()
+```
+# Correlation function (look at corr of Emission_g_CH4_ha_day with cumulative)
+
+```{r}
+cor_emission_cumulative_by_day <- function(df,
+                                           emission_col = "Emission_g_CH4_ha_day",
+                                           cumulative_col = "Cumulative_seaonal_kg_CH4_ha",
+                                           day_col = "Days_After_Flooding") {
+  
+  df %>%
+    mutate(
+      Day_Int = as.integer(round(.data[[day_col]])),
+      Emission_num = as.numeric(.data[[emission_col]]),
+      Cumulative_num = as.numeric(.data[[cumulative_col]])
+    ) %>%
+    group_by(Day_Int) %>%
+    summarise(
+      n = sum(!is.na(Emission_num) & !is.na(Cumulative_num)),
+      
+      correlation = if (n >= 3) {
+        cor(Emission_num,
+            Cumulative_num,
+            use = "complete.obs",
+            method = "pearson")
+      } else NA_real_,
+      
+      p_value = if (n >= 3) {
+        cor.test(Emission_num,
+                 Cumulative_num,
+                 method = "pearson")$p.value
+      } else NA_real_,
+      
+      .groups = "drop"
+    )
+}
+```
+
+# Try function 
+
+```{r}
+cor_results <- cor_emission_cumulative_by_day(flux_interpolated)
+
+ggplot(cor_results, aes(y=correlation, x=Day_Int)) + geom_point()
+
+```
+
+
+
