@@ -42,7 +42,8 @@ library(readxl)
 library(openxlsx)
 library(ggrepel)
 library(gridExtra)
-library(zoo)
+library(ggpubr)
+library(cluster)
 ```
 
 # Load data
@@ -119,16 +120,31 @@ interpolate_emissions <- function(data,
 # Linear interpolation
 
 ```{r}
-flux_interpolated <- interpolate_emissions(master)
+flux_interpolated <- interpolate_emissions(master) %>% mutate(Day_Int = as.integer(round(Days_After_Flooding)))
+
 ```
 
 
 
 # Interpolation visualisation
 
+## check to make sure code is functioning well
+
+```{r}
+ggplot(flux_interpolated%>%filter(Number=="1"), aes(y=Emission_g_CH4_ha_day, x=Days_After_Flooding, color = Number)) + geom_point()
+
+ggplot(master%>%filter(Number=="1"), aes(y=Emission_g_CH4_ha_day, x=Days_After_Flooding, color = Number)) + geom_point()
+
+```
+
+
 ```{r}
 ggplot(flux_interpolated, aes(y=Emission_g_CH4_ha_day, x=Days_After_Flooding, color = Number)) + geom_point()
+
+ggplot(master, aes(y=Emission_g_CH4_ha_day, x=Days_After_Flooding, color = Number)) + geom_point()
+
 ```
+
 # Correlation function (look at corr of Emission_g_CH4_ha_day with cumulative)
 
 ```{r}
@@ -171,8 +187,144 @@ cor_emission_cumulative_by_day <- function(df,
 cor_results <- cor_emission_cumulative_by_day(flux_interpolated)
 
 ggplot(cor_results, aes(y=correlation, x=Day_Int)) + geom_point()
+```
+
+# Try R2 and regression
+
+## Function
+```{r}
+find_best_predictive_day <- function(df,
+                                     emission_col = "Emission_g_CH4_ha_day",
+                                     cumulative_col = "Cumulative_seaonal_kg_CH4_ha",
+                                     day_col = "Days_After_Flooding") {
+  
+  results <- df %>%
+    mutate(
+      Day_Int = as.integer(round(.data[[day_col]])),
+      Emission_num = as.numeric(.data[[emission_col]]),
+      Cumulative_num = as.numeric(.data[[cumulative_col]])
+    ) %>%
+    group_by(Day_Int) %>%
+    summarise(
+      n = sum(!is.na(Emission_num) & !is.na(Cumulative_num)),
+      
+      model = if (n >= 3) list(lm(Cumulative_num ~ Emission_num)) else list(NULL),
+      
+      R2 = if (!is.null(model[[1]])) summary(model[[1]])$r.squared else NA_real_,
+      
+      slope = if (!is.null(model[[1]])) coef(model[[1]])[2] else NA_real_,
+      
+      p_value = if (!is.null(model[[1]])) 
+        summary(model[[1]])$coefficients[2,4] else NA_real_,
+      
+      .groups = "drop"
+    ) %>%
+    select(-model)
+  
+  best_day <- results %>%
+    filter(R2 == max(R2, na.rm = TRUE))
+  
+  list(
+    all_days = results,
+    best_day = best_day
+  )
+}
+```
+
+## Run dataset 
+
+```{r}
+output <- find_best_predictive_day(flux_interpolated)
+
+all_days <- output$all_days      # full summary
+output$best_day      # day with highest R²
+
+ggplot(all_days, aes(y=R2, x=Day_Int)) + geom_point() + geom_hline(yintercept=0.95) + geom_hline(yintercept=0.905)
+
+```
+# Use Day 62 to check 
+
+```{r}
+ggplot(data=flux_interpolated%>%filter(Day_Int==62), aes(x=Emission_g_CH4_ha_day, y=Cumulative_seaonal_kg_CH4_ha))+
+  geom_point()+
+  geom_smooth(method = lm)+
+  stat_regline_equation(aes(x=Emission_g_CH4_ha_day, y=Cumulative_seaonal_kg_CH4_ha, 
+    label =  paste(..rr.label..)),
+    show.legend = FALSE, 
+    label.x = 2000,
+    label.y = 100)+
+  stat_regline_equation(aes(x=Emission_g_CH4_ha_day, y=Cumulative_seaonal_kg_CH4_ha, 
+    label = paste(..eq.label..)),
+    show.legend = FALSE, 
+    label.x = 2000, 
+    label.y = 150)
+```
+# What if we just drew a triangle from day 62?
+
+Essentially, if we just took the flux from day 62, linear interpolated between first and last days using the known growth period, and then summed daily emissions, how well will this predict seasonaly cumulative emissions?
+
+Assume 130 days here for fun as a thought experiment
+
+```{r}
+interpolate_day62_triangle <- function(df,
+                                       day_col = "Days_After_Flooding",
+                                       emission_col = "Emission_g_CH4_ha_day",
+                                       group_col = "Number") {
+  
+  df %>%
+    mutate(
+      Day_Int = as.integer(round(.data[[day_col]])),
+      Emission_num = as.numeric(.data[[emission_col]])
+    ) %>%
+    group_by(.data[[group_col]]) %>%
+    summarise({
+      
+      # Extract ONLY day 62 flux
+      y62 <- Emission_num[Day_Int == 62][1]
+      
+      if (is.na(y62)) {
+        tibble(total_emission_0_130 = NA_real_)
+      } else {
+        
+        days <- 0:130
+        
+        interp_values <- ifelse(
+          days <= 62,
+          y62 * (days / 62),
+          y62 * (130 - days) / (130 - 62)
+        )
+        
+        tibble(
+          total_emission_0_130 = sum(interp_values)
+        )
+      }
+      
+    }, .groups = "drop")
+}
 
 ```
 
+```{r}
+day62_predict <- interpolate_day62_triangle(flux_interpolated) %>% mutate(total_emission_0_130_kg_ha = total_emission_0_130/1000)
+```
 
+## Visualise
+```{r}
+master_joined <-day62_predict  %>%
+  left_join(master, by = "Number")
+
+ggplot(master_joined, aes(y=Cumulative_seaonal_kg_CH4_ha, x=total_emission_0_130_kg_ha)) + geom_point()+
+geom_smooth(method = lm)+
+  stat_regline_equation(aes(x=total_emission_0_130_kg_ha, y=Cumulative_seaonal_kg_CH4_ha, 
+    label =  paste(..rr.label..)),
+    show.legend = FALSE, 
+    label.x = 200,
+    label.y = 100)+
+  stat_regline_equation(aes(x=total_emission_0_130_kg_ha, y=Cumulative_seaonal_kg_CH4_ha, 
+    label = paste(..eq.label..)),
+    show.legend = FALSE, 
+    label.x = 200, 
+    label.y = 150)
+
+```
 
