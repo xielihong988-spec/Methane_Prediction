@@ -1,10 +1,12 @@
 ---
 title: "CH4 initial"
-author: 
-Zhang Zhenglin
+author: "Zhang Zhenglin"
 output:
   pdf_document:
     toc: yes
+  html_notebook:
+    toc: yes
+    toc_float: yes
 editor_options:
   markdown:
     wrap: sentence
@@ -346,33 +348,57 @@ geom_smooth(method = lm)+
     geom_abline(intercept = 0, slope = 1, linetype = "dashed")
 
 ```
-# What is we used the linear regrssion of day 62 emission against seasonal cumulative to get a cumulative value?
+## If we adjust the above output with linear regression, we get an average error in prediction by about 15%
+
+```{r}
+lm_day62_triangle <- lm(Cumulative_seaonal_kg_CH4_ha~total_emission_0_130_kg_ha,master_joined)
+master_joined$predict_linear_reg_triangle <- predict(lm_day62_triangle, master_joined)
+
+ggplot(master_joined, aes(y=Cumulative_seaonal_kg_CH4_ha, x=predict_linear_reg_triangle)) + geom_point()+
+#geom_smooth(method = lm)+
+  stat_regline_equation(aes(x=predict_linear_reg_triangle, y=Cumulative_seaonal_kg_CH4_ha, 
+    label =  paste(..rr.label..)),
+    show.legend = FALSE, 
+    label.x = 200,
+    label.y = 100)+
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed")
+
+master_joined$diff_linear_reg_triangle <- master_joined$predict_linear_reg_triangle-master_joined$Cumulative_seaonal_kg_CH4_ha
+
+master_joined$diff_linear_reg_triangle_diff <- 100*abs(master_joined$diff_linear_reg_triangle/master_joined$Cumulative_seaonal_kg_CH4_ha)
+
+
+mean(master_joined$diff_linear_reg_triangle_diff)
+```
+
+
+## What is we used the linear regrssion of day 62 emission against seasonal cumulative to get a cumulative value? Actually it is the same answer as immediately above. 
 
 ```{r}
 
 lm_day62 <- lm(Cumulative_seaonal_kg_CH4_ha~Emission_g_CH4_ha_day, flux_interpolated%>%filter(Day_Int==62))
 
 
-master_joined$predict_linear_reg_ppm <- predict(lm_day62, flux_interpolated%>%filter(Day_Int==62))
+master_joined$predict_linear_reg <- predict(lm_day62, flux_interpolated%>%filter(Day_Int==62))
 
 ```
 
 ```{r}
-ggplot(master_joined, aes(y=Cumulative_seaonal_kg_CH4_ha, x=predict_linear_reg_ppm)) + geom_point()+
+ggplot(master_joined, aes(y=Cumulative_seaonal_kg_CH4_ha, x=predict_linear_reg)) + geom_point()+
 #geom_smooth(method = lm)+
-  stat_regline_equation(aes(x=predict_linear_reg_ppm, y=Cumulative_seaonal_kg_CH4_ha, 
+  stat_regline_equation(aes(x=predict_linear_reg, y=Cumulative_seaonal_kg_CH4_ha, 
     label =  paste(..rr.label..)),
     show.legend = FALSE, 
     label.x = 200,
     label.y = 100)+
- # stat_regline_equation(aes(x=predict_linear_reg_ppm, y=Cumulative_seaonal_kg_CH4_ha, 
+ # stat_regline_equation(aes(x=predict_linear_reg, y=Cumulative_seaonal_kg_CH4_ha, 
  #   label = paste(..eq.label..)),
  #   show.legend = FALSE, 
  #   label.x = 200, 
  #   label.y = 150)+
     geom_abline(intercept = 0, slope = 1, linetype = "dashed")
 
-master_joined$diff_linear_reg <- master_joined$predict_linear_reg_ppm-master_joined$Cumulative_seaonal_kg_CH4_ha
+master_joined$diff_linear_reg <- master_joined$predict_linear_reg-master_joined$Cumulative_seaonal_kg_CH4_ha
 master_joined$diff_linear_reg_percent_diff <- 100*abs(master_joined$diff_linear_reg/master_joined$Cumulative_seaonal_kg_CH4_ha)
 
 
