@@ -404,4 +404,3 @@ master_joined$diff_linear_reg_percent_diff <- 100*abs(master_joined$diff_linear_
 
 mean(master_joined$diff_linear_reg_percent_diff)
 ```
-
