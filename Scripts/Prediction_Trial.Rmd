@@ -241,7 +241,7 @@ output <- find_best_predictive_day(flux_interpolated)
 all_days <- output$all_days      # full summary
 output$best_day      # day with highest R²
 
-ggplot(all_days, aes(y=R2, x=Day_Int)) + geom_point() + geom_hline(yintercept=0.95) + geom_hline(yintercept=0.905)
+ggplot(all_days, aes(y=R2, x=Day_Int)) + geom_point() + geom_hline(yintercept=0.95) #+ geom_hline(yintercept=0.905)
 
 ```
 # Use Day 62 to check 
@@ -312,7 +312,7 @@ interpolate_day62_triangle <- function(df,
 ```
 
 ```{r}
-day62_predict <- interpolate_day62_triangle(flux_interpolated) %>% mutate(total_emission_0_130_kg_ha = total_emission_0_130/1000)
+day62_predict <- interpolate_day62_triangle(flux_interpolated) %>% mutate(total_emission_0_130_kg_ha = total_emission_0_130/1000) %>%mutate(predicted_emissions = total_emission_0_130_kg_ha)
 ```
 
 ## Join data
@@ -333,19 +333,21 @@ mean(master_joined$diff_triangle_percent)
 
 # generally, we see that this approach works, but it tends to underpredict emissions. But honestly, its a pretty damn good way to do it. 
 
-ggplot(master_joined, aes(y=Cumulative_seaonal_kg_CH4_ha, x=total_emission_0_130_kg_ha)) + geom_point()+
+ggplot(master_joined, aes(y=predicted_emissions, x=Cumulative_seaonal_kg_CH4_ha)) + geom_point()+
 geom_smooth(method = lm)+
-  stat_regline_equation(aes(x=total_emission_0_130_kg_ha, y=Cumulative_seaonal_kg_CH4_ha, 
+  stat_regline_equation(aes(x=Cumulative_seaonal_kg_CH4_ha, y=predicted_emissions, 
     label =  paste(..rr.label..)),
     show.legend = FALSE, 
     label.x = 200,
-    label.y = 100)+
-  stat_regline_equation(aes(x=total_emission_0_130_kg_ha, y=Cumulative_seaonal_kg_CH4_ha, 
+    label.y = 400)+
+  stat_regline_equation(aes(x=Cumulative_seaonal_kg_CH4_ha, y=predicted_emissions, 
     label = paste(..eq.label..)),
     show.legend = FALSE, 
     label.x = 200, 
-    label.y = 150)+
-    geom_abline(intercept = 0, slope = 1, linetype = "dashed")
+    label.y = 450)+
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed")+
+  scale_x_continuous(limits = c(0,650), expand = c(0, 0))+
+  scale_y_continuous(limits = c(0,650), expand = c(0, 0))
 
 ```
 ## If we adjust the above output with linear regression, we get an average error in prediction by about 15%
