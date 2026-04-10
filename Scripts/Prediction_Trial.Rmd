@@ -241,9 +241,21 @@ output <- find_best_predictive_day(flux_interpolated)
 all_days <- output$all_days      # full summary
 output$best_day      # day with highest R²
 
-ggplot(all_days, aes(y=R2, x=Day_Int)) + geom_point() + geom_hline(yintercept=0.95) #+ geom_hline(yintercept=0.905)
+ggplot(all_days, aes(y=R2, x=Day_Int)) + geom_point() + geom_hline(yintercept=0.95)+
+   geom_vline(xintercept = 62,linetype = "dashed", color = "black")+
+   geom_vline(xintercept = 81,linetype = "dashed", color = "black")
+  #+ geom_hline(yintercept=0.905)
 
 ```
+# What is the flux on the top peaks
+
+```{r}
+ggplot(flux_interpolated, aes(y=Emission_g_CH4_ha_day, x=Days_After_Flooding, color = Number)) + geom_point() +
+     geom_vline(xintercept = 62,linetype = "dashed", color = "black")+
+   geom_vline(xintercept = 81,linetype = "dashed", color = "black")
+```
+
+
 # Use Day 62 to check 
 
 ```{r}
@@ -260,10 +272,23 @@ ggplot(data=flux_interpolated%>%filter(Day_Int==62), aes(x=Emission_g_CH4_ha_day
     show.legend = FALSE, 
     label.x = 2000, 
     label.y = 150)
+
+
+ggplot(data=flux_interpolated%>%filter(Day_Int==81), aes(x=Emission_g_CH4_ha_day, y=Cumulative_seaonal_kg_CH4_ha))+
+  geom_point()+
+  geom_smooth(method = lm)+
+  stat_regline_equation(aes(x=Emission_g_CH4_ha_day, y=Cumulative_seaonal_kg_CH4_ha, 
+    label =  paste(..rr.label..)),
+    show.legend = FALSE, 
+    label.x = 2000,
+    label.y = 100)+
+  stat_regline_equation(aes(x=Emission_g_CH4_ha_day, y=Cumulative_seaonal_kg_CH4_ha, 
+    label = paste(..eq.label..)),
+    show.legend = FALSE, 
+    label.x = 2000, 
+    label.y = 150)
 ```
 # Let's use day 62 to predict seasonal cumulative emissions.
-
-
 
 
 # What if we just drew a triangle from day 62?
@@ -350,39 +375,15 @@ geom_smooth(method = lm)+
   scale_y_continuous(limits = c(0,650), expand = c(0, 0))
 
 ```
-## If we adjust the above output with linear regression, we get an average error in prediction by about 15%
+
+
+## What is we used the linear regrssion of day 62 emission against seasonal cumulative for prediction. 
 
 ```{r}
-lm_day62_triangle <- lm(Cumulative_seaonal_kg_CH4_ha~total_emission_0_130_kg_ha,master_joined)
-master_joined$predict_linear_reg_triangle <- predict(lm_day62_triangle, master_joined)
-
-ggplot(master_joined, aes(y=Cumulative_seaonal_kg_CH4_ha, x=predict_linear_reg_triangle)) + geom_point()+
-#geom_smooth(method = lm)+
-  stat_regline_equation(aes(x=predict_linear_reg_triangle, y=Cumulative_seaonal_kg_CH4_ha, 
-    label =  paste(..rr.label..)),
-    show.legend = FALSE, 
-    label.x = 200,
-    label.y = 100)+
-    geom_abline(intercept = 0, slope = 1, linetype = "dashed")
-
-master_joined$diff_linear_reg_triangle <- master_joined$predict_linear_reg_triangle-master_joined$Cumulative_seaonal_kg_CH4_ha
-
-master_joined$diff_linear_reg_triangle_diff <- 100*abs(master_joined$diff_linear_reg_triangle/master_joined$Cumulative_seaonal_kg_CH4_ha)
-
-
-mean(master_joined$diff_linear_reg_triangle_diff)
-```
-
-
-## What is we used the linear regrssion of day 62 emission against seasonal cumulative to get a cumulative value? Actually it is the same answer as immediately above. 
-
-```{r}
-
 lm_day62 <- lm(Cumulative_seaonal_kg_CH4_ha~Emission_g_CH4_ha_day, flux_interpolated%>%filter(Day_Int==62))
 
 
 master_joined$predict_linear_reg <- predict(lm_day62, flux_interpolated%>%filter(Day_Int==62))
-
 ```
 
 ```{r}
@@ -406,3 +407,98 @@ master_joined$diff_linear_reg_percent_diff <- 100*abs(master_joined$diff_linear_
 
 mean(master_joined$diff_linear_reg_percent_diff)
 ```
+
+## Do a historgram
+
+```{r}
+
+center_value_diff_linear_reg <- median(master_joined$diff_linear_reg)  # Find the center of the histogram
+
+
+linear_reg_histogram <-
+ggplot(master_joined, aes(x = diff_linear_reg)) + 
+  geom_histogram(binwidth = 10, fill = "skyblue", color = "black") +
+  labs(
+    x = expression("Difference in Cumulative seasonal emissions (kg CH4 ha"^-1 * ", predicted - actual)"),
+    #"Difference in ΔC (ppm/hr, predicted MLCS - GC)",  # Rename x-axis
+    y = "Frequency"
+  ) +
+  scale_x_continuous(breaks = c(round(center_value_diff_linear_reg, 2)), limits = c(-70,70))+
+  geom_vline(xintercept = center_value_diff_linear_reg, linetype = "dashed", color = "red", size = 1.5)+
+   #ggtitle("(c) Fan off: Difference distribution")+
+  ggtitle("(c) Difference distribution")+
+  theme_minimal()
+
+linear_reg_histogram
+```
+
+# Let's try lm, but with two points
+
+## Reshape to get necessary dataframe
+
+```{r}
+extract_days_62_81 <- function(df,
+                               day_col = "Days_After_Flooding",
+                               emission_col = "Emission_g_CH4_ha_day",
+                               cumulative_col = "Cumulative_seaonal_kg_CH4_ha",
+                               group_col = "Number") {
+  
+  df %>%
+    mutate(
+      Day_Int = as.integer(round(.data[[day_col]]))
+    ) %>%
+    filter(Day_Int %in% c(62, 81)) %>%
+    select(all_of(group_col), Day_Int,
+           all_of(emission_col),
+           all_of(cumulative_col)) %>%
+    
+    # Pivot so 62 and 81 become columns
+    pivot_wider(
+      names_from = Day_Int,
+      values_from = all_of(emission_col),
+      names_prefix = "Day_"
+    ) %>%
+    
+    # Keep one cumulative per Number
+    group_by(.data[[group_col]]) %>%
+    summarise(
+      Cumulative = first(.data[[cumulative_col]]),
+      Day_62 = first(Day_62),
+      Day_81 = first(Day_81),
+      .groups = "drop"
+    )
+}
+
+df_day62_81 <- extract_days_62_81(flux_interpolated)
+```
+
+
+
+```{r}
+two_day_model <- lm(Cumulative ~ Day_62+Day_81, data =df_day62_81)
+
+summary(two_day_model)
+
+master_joined$predict_linear_reg_two_days <- predict(two_day_model, df_day62_81)
+
+
+master_joined$diff_linear_reg_two_days <- master_joined$predict_linear_reg_two_days-master_joined$Cumulative_seaonal_kg_CH4_ha
+
+master_joined$diff_linear_reg_two_days_percent_diff <- 100*abs(master_joined$diff_linear_reg_two_days/master_joined$Cumulative_seaonal_kg_CH4_ha)
+
+
+mean(master_joined$diff_linear_reg_two_days_percent_diff)
+
+
+ggplot(master_joined, aes(y=Cumulative_seaonal_kg_CH4_ha, x=predict_linear_reg_two_days)) + geom_point()+
+#geom_smooth(method = lm)+
+  stat_regline_equation(aes(x=predict_linear_reg_two_days, y=Cumulative_seaonal_kg_CH4_ha, 
+    label =  paste(..rr.label..)),
+    show.legend = FALSE, 
+    label.x = 200,
+    label.y = 100)+
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed")
+
+```
+
+
