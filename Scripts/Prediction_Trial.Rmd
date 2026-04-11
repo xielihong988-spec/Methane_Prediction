@@ -382,8 +382,16 @@ geom_smooth(method = lm)+
 ```{r}
 lm_day62 <- lm(Cumulative_seaonal_kg_CH4_ha~Emission_g_CH4_ha_day, flux_interpolated%>%filter(Day_Int==62))
 
-
+pls205_diagnostics(lm_day62)
 master_joined$predict_linear_reg <- predict(lm_day62, flux_interpolated%>%filter(Day_Int==62))
+
+summary(lm_day62)
+
+rmse <- sqrt(mean(residuals(lm_day62)^2))
+rmse
+
+rmse <- sqrt(mean((master_joined$Cumulative_seaonal_kg_CH4_ha - master_joined$predict_linear_reg)^2))
+rmse
 ```
 
 ```{r}
@@ -399,7 +407,10 @@ ggplot(master_joined, aes(y=Cumulative_seaonal_kg_CH4_ha, x=predict_linear_reg))
  #   show.legend = FALSE, 
  #   label.x = 200, 
  #   label.y = 150)+
-    geom_abline(intercept = 0, slope = 1, linetype = "dashed")
+    geom_abline(intercept = 0, slope = 1, linetype = "dashed")+
+    scale_x_continuous(limits = c(0,650), expand = c(0, 0))+
+  scale_y_continuous(limits = c(0,650), expand = c(0, 0))
+  #geom_smooth(method = "lm")
 
 master_joined$diff_linear_reg <- master_joined$predict_linear_reg-master_joined$Cumulative_seaonal_kg_CH4_ha
 master_joined$diff_linear_reg_percent_diff <- 100*abs(master_joined$diff_linear_reg/master_joined$Cumulative_seaonal_kg_CH4_ha)
@@ -411,22 +422,19 @@ mean(master_joined$diff_linear_reg_percent_diff)
 ## Do a historgram
 
 ```{r}
-
 center_value_diff_linear_reg <- median(master_joined$diff_linear_reg)  # Find the center of the histogram
-
 
 linear_reg_histogram <-
 ggplot(master_joined, aes(x = diff_linear_reg)) + 
   geom_histogram(binwidth = 10, fill = "skyblue", color = "black") +
   labs(
-    x = expression("Difference in Cumulative seasonal emissions (kg CH4 ha"^-1 * ", predicted - actual)"),
+    x = expression("Difference in cumulative emissions (kg CH4 ha"^-1 * ", predicted-actual)"),
     #"Difference in ΔC (ppm/hr, predicted MLCS - GC)",  # Rename x-axis
     y = "Frequency"
   ) +
   scale_x_continuous(breaks = c(round(center_value_diff_linear_reg, 2)), limits = c(-70,70))+
   geom_vline(xintercept = center_value_diff_linear_reg, linetype = "dashed", color = "red", size = 1.5)+
-   #ggtitle("(c) Fan off: Difference distribution")+
-  ggtitle("(c) Difference distribution")+
+
   theme_minimal()
 
 linear_reg_histogram
